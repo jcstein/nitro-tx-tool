@@ -1,0 +1,139 @@
+# =============================================================================
+# Celestia DAS Server Configuration
+# Chain: nitro-popsigner-v7 (ID: 8283823) on Parent Chain 11155111
+#
+# Uses ClientTX architecture:
+# - Reader: Connects to Celestia DA Bridge node (JSON-RPC) for blob reads
+# - Writer: Connects to Celestia Core node (gRPC) for blob submission
+# - No local Celestia node required!
+# =============================================================================
+
+[server]
+rpc_addr = "0.0.0.0"
+rpc_port = 9876
+rpc_body_limit = 0
+read_timeout = "30s"
+read_header_timeout = "10s"
+write_timeout = "30s"
+idle_timeout = "120s"
+
+[celestia]
+# Namespace ID for blob operations (hex string)
+# IMPORTANT: Use a unique namespace for your chain!
+# Generate one at: https://docs.celestia.org/tutorials/node-tutorial#namespaces
+namespace_id = "178ced1ff430d2485a2c"
+
+# Gas settings for blob transactions
+gas_price = 0.01
+gas_multiplier = 1.01
+
+# Celestia network: "celestia" for mainnet, "mocha-4" for testnet
+network = "mocha-4"
+
+# Enable blob submission (writer mode) - required for batch poster
+with_writer = true
+noop_writer = false
+
+# Cache cleanup interval
+cache_time = "30m"
+
+# -----------------------------------------------------------------------------
+# Reader configuration
+# Connects to Celestia DA Bridge node (JSON-RPC) for reading blobs
+# Uses public Celestia infrastructure - no local node needed!
+# -----------------------------------------------------------------------------
+[celestia.reader]
+# Public Mocha testnet DA Bridge node
+# You can also use providers like QuickNode: https://www.quicknode.com/docs/celestia
+rpc = "https://delicate-sleek-lambo.celestia-mocha.quiknode.pro/4c9cbe24d1868cfbe4f425ca2ecb35fcb76c47fe/"
+# Auth token (if using a provider like QuickNode)
+auth_token = ""
+enable_tls = true
+
+# -----------------------------------------------------------------------------
+# Writer configuration
+# Connects to Celestia Core node (gRPC) for blob submission
+# Uses ClientTX - direct gRPC connection to consensus node
+# -----------------------------------------------------------------------------
+[celestia.writer]
+# Public Mocha testnet consensus node gRPC
+core_grpc = "delicate-sleek-lambo.celestia-mocha.quiknode.pro:9090"
+core_token = "4c9cbe24d1868cfbe4f425ca2ecb35fcb76c47fe"
+enable_tls = true
+
+# -----------------------------------------------------------------------------
+# Signer configuration
+# Uses remote signing via PopSigner for Celestia transaction signing
+# This is separate from the L1 PopSigner used by Nitro!
+# -----------------------------------------------------------------------------
+[celestia.signer]
+type = "remote"
+
+[celestia.signer.remote]
+# PopSigner API key for Celestia signing (from environment variable)
+api_key = "bbr_live_ViZqShyem39QgkZjoXI46NKZ"
+# PopSigner Key ID for your Celestia key
+key_id = "3d7932d3-f023-4393-aed8-6ab6b1139443"
+# Custom PopSigner endpoint (optional, leave empty for default)
+base_url = ""
+
+# Alternative: Local signer (if not using PopSigner for Celestia)
+# Uncomment below and comment out the remote section above
+# [celestia.signer]
+# type = "local"
+# [celestia.signer.local]
+# key_name = "nitro-popsigner-v7-celestia-key"
+# key_path = ""  # Uses default: ~/.celestia-light-mocha-4/keys
+# backend = "test"
+
+# -----------------------------------------------------------------------------
+# Retry configuration for failed blob operations
+# -----------------------------------------------------------------------------
+[celestia.retry]
+max_retries = 5
+initial_backoff = "10s"
+max_backoff = "120s"
+backoff_factor = 2.0
+
+# -----------------------------------------------------------------------------
+# Validator configuration for Blobstream proof validation (FRAUD PROOFS)
+# This is CRITICAL for validators - enables fraud proofs with Celestia DA
+# PR #3237: Custom DA Complete Fraud Proof Support
+# -----------------------------------------------------------------------------
+[celestia.validator]
+# Parent chain RPC endpoint
+# This is used to query Blobstream contract for data root attestations
+eth_rpc = "wss://burned-morning-wildflower.ethereum-sepolia.quiknode.pro/815d16c618aec0be545129329342082b0945d621/"
+
+# Blobstream X contract address
+# Check latest address: https://docs.celestia.org/how-to-guides/blobstream#deployed-contracts
+blobstream_addr = "0xF0c6429ebAB2e7DC6e05DaFB61128bE21f13cb1e"
+
+# Seconds between Blobstream event polling (for catching up proofs)
+sleep_time = 3600
+
+# -----------------------------------------------------------------------------
+# Fallback to Arbitrum AnyTrust DAS (optional)
+# Enable if you want to fall back to AnyTrust when Celestia fails
+# -----------------------------------------------------------------------------
+[fallback]
+enabled = false
+das_rpc = ""
+
+# -----------------------------------------------------------------------------
+# Logging configuration
+# -----------------------------------------------------------------------------
+[logging]
+level = "INFO"
+type = "plaintext"
+
+# -----------------------------------------------------------------------------
+# Metrics and profiling configuration
+# -----------------------------------------------------------------------------
+[metrics]
+enabled = true
+addr = "0.0.0.0"
+port = 6060
+pprof = false
+pprof_addr = "127.0.0.1"
+pprof_port = 6061

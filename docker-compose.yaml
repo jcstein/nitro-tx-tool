@@ -1,0 +1,179 @@
+version: '3.8'
+
+# =============================================================================
+# Nitro + Celestia DA Docker Compose
+# Chain: nitro-popsigner-v7 (ID: 8283823) on Parent Chain 11155111
+# Uses ClientTX: Direct connection to Celestia infrastructure (no local node)
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Celestia DAS Server
+  # Translates between Nitro DA provider protocol and Celestia
+  # Uses ClientTX with remote signer (popsigner) for blob submission
+  # ===========================================================================
+  celestia-das-server:
+    image: ${NITRO_DAS_IMAGE:-ghcr.io/celestiaorg/nitro-das-celestia:v0.7.0}
+    container_name: celestia-das-server
+    restart: unless-stopped
+    command:
+      - --config
+      - /config/celestia-config.toml
+    ports:
+      - "9876:9876" # DA provider RPC (Nitro connects here)
+      - "6060:6060" # Metrics (optional)
+    volumes:
+      - ./config/celestia-config.toml:/config/celestia-config.toml:ro
+    environment:
+      # Remote signer (popsigner) credentials
+      - POPSIGNER_API_KEY=${POPSIGNER_CELESTIA_API_KEY}
+      # Parent chain RPC for Blobstream validation (fraud proofs)
+      - ETH_RPC_URL=${L1_RPC_URL}
+    # Healthcheck ensures celestia-das-server is ready before nitro-sequencer starts
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9876/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - nitro-network
+
+  # ===========================================================================
+  # Nitro Sequencer Node (Batch Poster + Validator)
+  # Uses official Offchain Labs image with DA API interface (PR #3949, #3237)
+  #
+  # Image options:
+  # 1. Use latest release with DA support: offchainlabs/nitro-node:v3.9.0 (when released)
+  # 2. Build from your local source (v3.9.0-rc.1): see README
+  # 3. Use Celestia fork (legacy): ghcr.io/celestiaorg/nitro:v3.6.8
+  # ===========================================================================
+  nitro-sequencer:
+    # TODO: Update to official release once v3.9.0 is published on Docker Hub
+    # Your local repo is at v3.9.0-rc.1 - you may need to build this image locally
+    # docker build -t nitro-node:local --target nitro-node .
+    image: ${NITRO_IMAGE:-offchainlabs/nitro-node:v3.5.4-8de7ff5}
+    container_name: nitro-sequencer
+    restart: unless-stopped
+    depends_on:
+      celestia-das-server:
+        condition: service_healthy  # Wait for healthcheck to pass, not just container start
+    ports:
+      - "8547:8547" # HTTP RPC
+      - "8548:8548" # WebSocket RPC
+      - "9642:9642" # Metrics
+      - "9644:9644" # Feed
+    volumes:
+      - ./config:/config:ro
+      - ./certs:/certs:ro
+      - nitro-data:/home/user/.arbitrum
+      - nitro-keystore:/home/user/l1keystore
+    environment:
+      # L1 Connections - WSS is recommended for sequencers for real-time updates
+      - L1_RPC_URL=${L1_RPC_URL} # Can be HTTP or WSS (e.g., wss://sepolia.infura.io/ws/v3/KEY)
+      - L1_BEACON_URL=${L1_BEACON_URL} # Beacon Chain API (HTTP)
+      - POPSIGNER_MTLS_URL=${POPSIGNER_MTLS_URL}
+      # External signer addresses (managed by PopSigner)
+      - BATCH_POSTER_ADDRESS=${BATCH_POSTER_ADDRESS}
+      - STAKER_ADDRESS=${STAKER_ADDRESS}
+    command:
+      # -------------------------------------------------------------------------
+      # Core Chain Configuration
+      # -------------------------------------------------------------------------
+      - --chain.id=8283823
+      - --chain.name=nitro-popsigner-v7
+      - --chain.info-files=/config/chain-info.json
+      # -------------------------------------------------------------------------
+      # Parent Chain (L1) Connection
+      # URL can be HTTP or WSS - WSS recommended for sequencers:
+      #   HTTP: https://sepolia.infura.io/v3/YOUR_KEY
+      #   WSS:  wss://sepolia.infura.io/ws/v3/YOUR_KEY
+      # -------------------------------------------------------------------------
+      - --parent-chain.connection.url=${L1_RPC_URL}
+      # Beacon Chain API for EIP-4844 blob data (always HTTP)
+      - --parent-chain.blob-client.beacon-url=${L1_BEACON_URL}
+      # Use polling instead of websocket header subscriptions for L1 reader stability.
+      - --execution.parent-chain-reader.poll-only=true
+      - --execution.parent-chain-reader.poll-interval=5s
+      # Read against latest headers instead of waiting for safe/finalized tagging.
+      - --execution.parent-chain-reader.use-finality-data=false
+      # -------------------------------------------------------------------------
+      # HTTP/WS RPC Configuration
+      # -------------------------------------------------------------------------
+      - --http.addr=0.0.0.0
+      - --http.port=8547
+      - --http.api=eth,net,web3,arb,debug
+      - --http.vhosts=*
+      - --http.corsdomain=*
+      - --ws.addr=0.0.0.0
+      - --ws.port=8548
+      - --ws.api=eth,net,web3
+      - --ws.origins=*
+      # -------------------------------------------------------------------------
+      # Sequencer Configuration
+      # For single-sequencer setup, disable coordinator requirement
+      # -------------------------------------------------------------------------
+      - --node.sequencer=true
+      - --execution.sequencer.enable=true
+      - --node.delayed-sequencer.enable=true
+      - --node.dangerous.no-sequencer-coordinator=true
+      # -------------------------------------------------------------------------
+      # Celestia DA Provider Configuration (PR #3949)
+      # External DA provider connects to celestia-das-server
+      # -------------------------------------------------------------------------
+      - --node.da.external-provider.enable=true
+      - --node.da.external-provider.with-writer=true
+      - --node.da.external-provider.rpc.url=http://celestia-das-server:9876
+      # -------------------------------------------------------------------------
+      # Batch Poster Configuration (uses PopSigner for L1 tx signing)
+      # -------------------------------------------------------------------------
+      - --node.batch-poster.enable=true
+      # Force regular posting cadence even when there are no useful txs.
+      # Note: this does not create empty L2 execution blocks.
+      - --node.batch-poster.max-delay=30s
+      - --node.batch-poster.max-empty-batch-delay=30s
+      - --node.batch-poster.wait-for-max-delay=true
+      - --node.batch-poster.data-poster.external-signer.url=${POPSIGNER_MTLS_URL}
+      - --node.batch-poster.data-poster.external-signer.address=${BATCH_POSTER_ADDRESS}
+      - --node.batch-poster.data-poster.external-signer.method=eth_signTransaction
+      - --node.batch-poster.data-poster.external-signer.client-cert=/certs/client.crt
+      - --node.batch-poster.data-poster.external-signer.client-private-key=/certs/client.key
+      - --node.batch-poster.data-poster.external-signer.root-ca=/certs/ca.crt
+      # -------------------------------------------------------------------------
+      # Staker/Validator Configuration (BOLD Protocol)
+      # IMPORTANT: BOLD requires WETH (not native ETH) for staking!
+      # Before starting, ensure your STAKER_ADDRESS has:
+      #   1. WETH tokens (wrap ETH via WETH.deposit())
+      #   2. Approved ChallengeManager to spend WETH
+      # Stake amount: ~0.1 ETH equivalent per assertion level
+      # -------------------------------------------------------------------------
+      - --node.staker.enable=true
+      - --node.staker.strategy=MakeNodes
+      - --node.staker.data-poster.external-signer.url=${POPSIGNER_MTLS_URL}
+      - --node.staker.data-poster.external-signer.address=${STAKER_ADDRESS}
+      - --node.staker.data-poster.external-signer.method=eth_signTransaction
+      - --node.staker.data-poster.external-signer.client-cert=/certs/client.crt
+      - --node.staker.data-poster.external-signer.client-private-key=/certs/client.key
+      - --node.staker.data-poster.external-signer.root-ca=/certs/ca.crt
+      # -------------------------------------------------------------------------
+      # Feed Output (for full nodes to subscribe)
+      # -------------------------------------------------------------------------
+      - --node.feed.output.enable=true
+      - --node.feed.output.addr=0.0.0.0
+      - --node.feed.output.port=9644
+      # -------------------------------------------------------------------------
+      # Metrics
+      # -------------------------------------------------------------------------
+      - --metrics
+      - --metrics-server.addr=0.0.0.0
+      - --metrics-server.port=9642
+    networks:
+      - nitro-network
+
+networks:
+  nitro-network:
+    driver: bridge
+
+volumes:
+  nitro-data:
+  nitro-keystore:

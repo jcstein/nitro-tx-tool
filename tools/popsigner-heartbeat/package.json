@@ -1,0 +1,12 @@
+{
+  "name": "popsigner-heartbeat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Periodic L2 heartbeat sender using PopSigner eth_signTransaction",
+  "scripts": {
+    "start": "node index.mjs",
+    "bridge:deposit": "node bridge-deposit.mjs",
+    "spam:l2": "HEARTBEAT_INTERVAL=250ms MAX_RUNS=0 node index.mjs"
+  }
+}

@@ -1,0 +1,5 @@
+.DS_Store
+.env
+certs/
+node_modules/
+tools/**/node_modules/

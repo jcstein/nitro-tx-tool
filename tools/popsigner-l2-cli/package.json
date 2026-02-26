@@ -1,0 +1,15 @@
+{
+  "name": "popsigner-l2-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bridge to Arbitrum Orbit L2 and pulse self-transfers using PopSigner",
+  "bin": {
+    "popsigner-l2": "./bin/popsigner-l2.mjs"
+  },
+  "scripts": {
+    "doctor": "node ./bin/popsigner-l2.mjs doctor",
+    "bridge": "node ./bin/popsigner-l2.mjs bridge",
+    "pulse": "node ./bin/popsigner-l2.mjs pulse"
+  }
+}
