@@ -6,6 +6,24 @@ Small CLI for PopSigner-powered Orbit workflows:
 - pulse L2 self-transfers to force block production
 - run doctor checks for RPC + balances
 
+## Quick Start
+
+```bash
+cd tools/popsigner-l2-cli
+cp .env.example .env
+# edit .env
+set -a; source .env; set +a
+
+# 1) sanity check
+node ./bin/popsigner-l2.mjs doctor
+
+# 2) bridge to L2 (optional if already funded)
+node ./bin/popsigner-l2.mjs bridge --eth 0.001 --wait-for-l2-credit
+
+# 3) start L2 tx pulse
+node ./bin/popsigner-l2.mjs pulse --interval 250ms --max-runs 0
+```
+
 ## Setup
 
 ```bash
@@ -63,6 +81,14 @@ set -a; source .env; set +a
 node ./bin/popsigner-l2.mjs doctor
 ```
 
+## Env Vars By Command
+
+| Command | Required | Optional |
+|---|---|---|
+| `doctor` | `POPSIGNER_RPC_URL`, `POPSIGNER_FROM` | `L1_RPC_URL`, `L2_RPC_URL`, `POPSIGNER_API_KEY` |
+| `bridge` | `L1_RPC_URL`, `POPSIGNER_RPC_URL`, `POPSIGNER_FROM`, `INBOX_ADDRESS` | `L2_RPC_URL` (needed for `--wait-for-l2-credit`), `POPSIGNER_API_KEY`, `DEPOSIT_ETH`, `MAX_PRIORITY_FEE_GWEI` |
+| `pulse` | `L2_RPC_URL`, `POPSIGNER_RPC_URL`, `POPSIGNER_FROM` | `POPSIGNER_TO`, `POPSIGNER_API_KEY`, `HEARTBEAT_INTERVAL`, `MAX_PRIORITY_FEE_GWEI`, `MAX_RUNS` |
+
 ## Commands
 
 ```bash
@@ -75,6 +101,17 @@ node ./bin/popsigner-l2.mjs bridge --eth 0.001 --wait-for-l2-credit
 # spam L2 self-txs
 node ./bin/popsigner-l2.mjs pulse --interval 250ms --max-runs 0
 ```
+
+## Common Errors
+
+- `HTTP 401: invalid project id`
+  - Your `L1_RPC_URL` key/url is invalid. Replace with a valid Sepolia HTTP(S) endpoint.
+- `network error at http://127.0.0.1:8547: fetch failed` or `connection refused`
+  - Nitro RPC is down or on a different port. Start/check Docker compose and confirm `L2_RPC_URL`.
+- `eth_chainId RPC -32601: Method not found` (against PopSigner)
+  - Some PopSigner endpoints do not implement `eth_chainId`. This does not block `bridge`/`pulse`.
+- `insufficient funds for gas * price + value`
+  - Sender needs funds on that chain (L1 for `bridge`, L2 for `pulse`).
 
 ## Publish As Own Repo
 
